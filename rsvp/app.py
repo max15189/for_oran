@@ -2,13 +2,13 @@ import io
 import os
 import datetime
 import logging
-import hashlib
-import hmac
 
 import openpyxl
 from dotenv import load_dotenv
-from flask import Flask, abort, render_template, request, send_file, Response
+from flask import Flask, render_template, request, send_file, Response
 from functools import wraps
+from twilio.twiml.messaging_response import MessagingResponse
+from twilio.request_validator import RequestValidator
 
 from models import Guest, Session
 
@@ -19,15 +19,18 @@ log = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-ADMIN_PASSWORD      = os.getenv("ADMIN_PASSWORD", "admin123")
-INVITATION_MESSAGE  = os.getenv("INVITATION_MESSAGE", "You are invited!")
-WEBHOOK_VERIFY_TOKEN = os.getenv("WEBHOOK_VERIFY_TOKEN", "")
-WHATSAPP_APP_SECRET  = os.getenv("WHATSAPP_APP_SECRET", "")   # optional, for signature check
+ADMIN_PASSWORD     = os.getenv("ADMIN_PASSWORD", "admin123")
+TWILIO_AUTH_TOKEN  = os.getenv("TWILIO_AUTH_TOKEN", "")
 
-REPLY_MAP = {"1": "yes", "2": "no", "3": "maybe"}
+REPLY_MAP = {
+    "1": ("yes",   "We're so happy you'll be joining us! See you there 🎉"),
+    "2": ("no",    "We'll miss you! Thank you for letting us know 💌"),
+    "3": ("maybe", "No worries, let us know whenever you decide 😊"),
+}
+UNKNOWN_REPLY = "Please reply with 1 (Yes, I'll be there), 2 (Sadly I can't), or 3 (Not sure yet)."
 
 
-# ── admin auth ────────────────────────────────────────────────────────────────
+# ── admin auth ─────────────────────────────────────────────────────────────────
 
 def require_admin(f):
     @wraps(f)
@@ -39,64 +42,52 @@ def require_admin(f):
     return decorated
 
 
-# ── webhook ───────────────────────────────────────────────────────────────────
-
-@app.route("/webhook", methods=["GET"])
-def webhook_verify():
-    """Meta calls this once when you register the webhook URL."""
-    if (request.args.get("hub.mode") == "subscribe"
-            and request.args.get("hub.verify_token") == WEBHOOK_VERIFY_TOKEN):
-        return request.args.get("hub.challenge", ""), 200
-    return "Forbidden", 403
-
+# ── webhook ────────────────────────────────────────────────────────────────────
 
 @app.route("/webhook", methods=["POST"])
 def webhook_receive():
-    """Meta calls this every time a guest replies."""
-    # Optional signature verification
-    if WHATSAPP_APP_SECRET:
-        sig = request.headers.get("X-Hub-Signature-256", "")
-        expected = "sha256=" + hmac.new(
-            WHATSAPP_APP_SECRET.encode(), request.data, hashlib.sha256
-        ).hexdigest()
-        if not hmac.compare_digest(sig, expected):
-            return "Forbidden", 403
+    # Validate the request came from Twilio
+    if TWILIO_AUTH_TOKEN:
+        validator = RequestValidator(TWILIO_AUTH_TOKEN)
+        if not validator.validate(request.url, request.form,
+                                  request.headers.get("X-Twilio-Signature", "")):
+            return Response("Forbidden", 403)
 
-    data = request.get_json(silent=True) or {}
-    try:
-        for entry in data.get("entry", []):
-            for change in entry.get("changes", []):
-                for msg in change.get("value", {}).get("messages", []):
-                    if msg.get("type") == "text":
-                        _handle_reply(
-                            phone=msg["from"],
-                            text=msg["text"]["body"].strip(),
-                        )
-    except Exception as exc:
-        log.error("Webhook error: %s", exc)
+    from_phone = request.form.get("From", "").strip()
+    body       = request.form.get("Body",  "").strip()
 
-    # Always 200 — Meta retries on anything else
-    return "OK", 200
+    reply_text = _handle_reply(from_phone, body)
+
+    resp = MessagingResponse()
+    resp.message(reply_text)
+    return str(resp), 200, {"Content-Type": "text/xml"}
 
 
-def _handle_reply(phone: str, text: str):
-    response = REPLY_MAP.get(text)
-    if not response:
-        log.info("Ignored unrecognized reply '%s' from %s", text, phone)
-        return
+def _handle_reply(phone: str, text: str) -> str:
+    entry = REPLY_MAP.get(text)
+    if not entry:
+        log.info("Unrecognized reply '%s' from %s", text, phone)
+        return UNKNOWN_REPLY
+
+    response, confirmation = entry
+
     db = Session()
     guest = db.query(Guest).filter_by(phone=phone).first()
-    if guest:
-        guest.response = response
-        guest.responded_at = datetime.datetime.utcnow()
-        db.commit()
-        log.info("Saved response '%s' from %s (%s)", response, guest.name, phone)
-    else:
+    if not guest:
+        db.close()
         log.warning("Reply from unknown number: %s", phone)
+        return ""
+
+    guest.response     = response
+    guest.responded_at = datetime.datetime.utcnow()
+    db.commit()
+    name = guest.name
     db.close()
+    log.info("Saved '%s' for %s (%s)", response, name, phone)
+    return confirmation
 
 
-# ── admin dashboard ───────────────────────────────────────────────────────────
+# ── admin dashboard ────────────────────────────────────────────────────────────
 
 @app.route("/admin")
 @require_admin

@@ -1,22 +1,21 @@
-# Wedding RSVP — WhatsApp Bot
+# Wedding RSVP — SMS Bot (Twilio)
 
-Guests receive a WhatsApp message with your invitation and reply **1**, **2**, or **3**.
-Responses are saved to a database. You view them at `/admin` and export to Excel.
+Guests receive an SMS with your invitation and reply **1**, **2**, or **3**.
+They immediately get a confirmation back. Responses are saved to a database
+you can view and export to Excel.
 
 ```
-You  →  WhatsApp message:
+You  →  SMS:
          "test 123
-          Reply with:
+          Please reply with:
           1 - Yes, I'll be there! ✓
           2 - Sadly I can't make it ✗
-          3 - Not sure yet ?
-          Just send 1, 2, or 3"
+          3 - Not sure yet ?"
 
-Guest  →  replies "1" in WhatsApp
+Guest  →  replies "1"
 
-Meta   →  POST /webhook  (your server)
-
-Server →  saves "yes" to database
+Server →  saves "yes" + auto-replies:
+          "We're so happy you'll be joining us! See you there 🎉"
 ```
 
 ---
@@ -25,70 +24,89 @@ Server →  saves "yes" to database
 
 | Service | Why | Cost |
 |---|---|---|
-| **Meta Developer** (developers.facebook.com) | To send WhatsApp messages and receive replies | Free |
-| **ngrok** (ngrok.com) | To give your local server a public URL so Meta can reach it | Free tier is enough |
+| **Twilio** (twilio.com) | Sends and receives the SMS messages | ~$10 total for 200 guests |
+| **ngrok** (ngrok.com) | Gives your laptop a public URL so Twilio can reach it | Free |
 
 ---
 
-## Step 1 — Meta Developer account
+## Step 1 — Sign up for Twilio
 
-1. Go to **https://developers.facebook.com**
-2. Log in with your Facebook account
-3. Click **"Get Started"** and follow the verification steps if it's your first time
-
----
-
-## Step 2 — Create a Meta App
-
-1. Click **"My Apps"** (top right) → **"Create App"**
-2. Choose **"Other"** → **"Business"**
-3. Give it any name (e.g. `wedding-rsvp`) → click **Create App**
+1. Go to **https://twilio.com** → click **"Sign up"**
+2. Fill in your name, email, password — no credit card needed for the trial
+3. Verify your email and phone number when prompted
+4. You land on the **Console Dashboard** — keep this tab open
 
 ---
 
-## Step 3 — Add WhatsApp to the app
+## Step 2 — Get a Twilio phone number
 
-1. In your app dashboard, scroll down and find **WhatsApp** → click **"Set up"**
-2. You land on the **"Getting Started"** page — keep this tab open
-
----
-
-## Step 4 — Collect your credentials
-
-On the **WhatsApp → Getting Started** page:
-
-**`WHATSAPP_API_URL`**
-Look for the sample curl command. Copy the URL — it looks like:
-```
-https://graph.facebook.com/v19.0/123456789012345/messages
-```
-
-**`WHATSAPP_TOKEN`**
-Labeled **"Temporary access token"** — copy it.
-> It expires after 24 hours. For permanent use: go to
-> **Meta Business Settings → System Users → Add → Generate Token** and select your app.
-
-**Add test recipients**
-- On the same page, find the **"To"** phone number field
-- Enter each guest number and click **"Send Message"** to verify them
-- The two numbers in `guests.csv` must be added here before running
+1. On the Console Dashboard click **"Get a phone number"** (or go to **Phone Numbers → Manage → Buy a number**)
+2. Search for a number — any country works for sending to Israel
+3. Click **"Buy"** — costs ~$1/month (covered by your free trial credit)
+4. Note down the number (e.g. `+12025551234`)
 
 ---
 
-## Step 5 — Set up ngrok
+## Step 3 — Collect your credentials
 
-Ngrok gives your local server a public `https://` URL so Meta can send webhook events to it.
+On the **Console Dashboard** (twilio.com/console) you will see:
 
-### Install
+| Variable | Where to find it |
+|---|---|
+| `TWILIO_ACCOUNT_SID` | Labeled **"Account SID"** on the dashboard |
+| `TWILIO_AUTH_TOKEN` | Labeled **"Auth Token"** — click the eye icon to reveal |
+| `TWILIO_FROM_NUMBER` | The phone number you just bought |
+
+---
+
+## Step 4 — Install ngrok
+
+Ngrok gives your local server a public `https://` address so Twilio can
+POST incoming SMS replies to it.
+
 ```bash
-# Download from https://ngrok.com/download  OR on Linux:
-snap install ngrok
-# Then authenticate (token is on your ngrok dashboard):
+# Download from https://ngrok.com/download  OR on Linux/Mac:
+snap install ngrok          # Linux
+brew install ngrok          # Mac
+
+# Authenticate (your token is on the ngrok dashboard after signing up):
 ngrok config add-authtoken YOUR_NGROK_TOKEN
 ```
 
-### Start a tunnel
-Open a **separate terminal** and run:
+---
+
+## Step 5 — Fill in your `.env`
+
+```bash
+cd rsvp
+cp .env.example .env
+```
+
+Open `.env` and paste your values:
+
+```
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_auth_token_here
+TWILIO_FROM_NUMBER=+12025551234
+ADMIN_PASSWORD=admin123
+INVITATION_MESSAGE=test 123
+```
+
+---
+
+## Step 6 — Run the setup and start the server
+
+```bash
+bash setup.sh                   # first time only — installs dependencies
+.venv/bin/python app.py         # starts the server on port 5000
+```
+
+---
+
+## Step 7 — Open an ngrok tunnel
+
+In a **second terminal window**:
+
 ```bash
 ngrok http 5000
 ```
@@ -98,62 +116,34 @@ You will see something like:
 Forwarding   https://a1b2-34-56.ngrok-free.app -> http://localhost:5000
 ```
 
-Copy that `https://` URL — you need it in the next step.
+Copy that `https://` URL.
 
 ---
 
-## Step 6 — Fill in your `.env`
+## Step 8 — Register the webhook in Twilio
 
-```bash
-cp .env.example .env
-```
+This tells Twilio where to forward incoming SMS replies.
 
-Edit `.env` and fill in:
+1. Go to **twilio.com/console → Phone Numbers → Manage → Active numbers**
+2. Click your phone number
+3. Scroll to **"Messaging Configuration"**
+4. Under **"A message comes in"** set:
+   - **Webhook**: `https://YOUR-NGROK-URL.ngrok-free.app/webhook`
+   - Method: **HTTP POST**
+5. Click **Save**
 
-```
-WHATSAPP_API_URL=https://graph.facebook.com/v19.0/YOUR_PHONE_NUMBER_ID/messages
-WHATSAPP_TOKEN=your_token_here
-WEBHOOK_VERIFY_TOKEN=my_secret_token_123   ← pick any string, you'll reuse it below
-ADMIN_PASSWORD=admin123
-INVITATION_MESSAGE=test 123
-```
+> Your Flask server must be running when Twilio forwards messages.
 
 ---
 
-## Step 7 — Run the server
-
-```bash
-bash setup.sh          # first time only: installs dependencies
-.venv/bin/python app.py
-```
-
-The server starts on **http://localhost:5000**
-
----
-
-## Step 8 — Register the webhook in Meta
-
-This tells Meta where to send guest replies.
-
-1. In the Meta developer console go to **WhatsApp → Configuration** (left sidebar)
-2. Under **Webhook** click **"Edit"**
-3. Fill in:
-   - **Callback URL**: `https://YOUR-NGROK-URL.ngrok-free.app/webhook`
-   - **Verify token**: the same string you put in `WEBHOOK_VERIFY_TOKEN` in `.env`
-4. Click **"Verify and Save"** — Meta will call your server to confirm it's running
-5. After saving, click **"Subscribe"** next to the **messages** field
-
-> Your Flask server must be running when you click "Verify and Save".
-
----
-
-## Step 9 — Send invitations
+## Step 9 — Send the invitations
 
 ```bash
 .venv/bin/python send_invitations.py
 ```
 
-Each guest in `guests.csv` gets a WhatsApp message with the invitation and reply instructions.
+Each guest in `guests.csv` gets an SMS. The script skips anyone already
+invited, so it's safe to run again if you add more guests.
 
 ---
 
@@ -161,15 +151,15 @@ Each guest in `guests.csv` gets a WhatsApp message with the invitation and reply
 
 Open **http://localhost:5000/admin** in your browser.
 - Username: anything
-- Password: whatever you set in `ADMIN_PASSWORD` (default: `admin123`)
+- Password: the `ADMIN_PASSWORD` from your `.env` (default: `admin123`)
 
-Click **"Export to Excel"** to download all responses.
+Click **"Export to Excel"** to download all responses as a spreadsheet.
 
 ---
 
 ## Adding more guests
 
-Edit `guests.csv` — add a row per guest:
+Edit `guests.csv`:
 ```
 name,phone
 Test Guest 1,0544359594
@@ -177,12 +167,28 @@ Test Guest 2,+972542663657
 New Guest,0521234567
 ```
 
-Then re-run `send_invitations.py`. It skips guests already in the database.
+Then re-run `send_invitations.py` — it only sends to new guests.
+
+---
+
+## Cost estimate
+
+| Item | Cost |
+|---|---|
+| Twilio phone number | ~$1/month |
+| SMS to Israel (per message) | ~$0.05 |
+| 200 guests (send + receive) | ~$15-20 total |
+| Twilio free trial credit | $15 |
+| **Out of pocket** | **~$5 after trial** |
 
 ---
 
 ## Important notes
 
-- **ngrok free URL changes** every time you restart ngrok. If you restart, go back to Meta → WhatsApp → Configuration and update the webhook URL.
-- For a permanent public URL (no ngrok), deploy the Flask app to **Railway**, **Render**, or any VPS — all have free tiers.
-- Guests must have been added as test recipients in Meta (Step 4) to receive messages during testing.
+- **ngrok free URL changes** every time you restart it. If you restart ngrok,
+  go to Twilio → your number → update the webhook URL.
+- For a permanent setup (no ngrok), deploy the Flask app to **Railway** or
+  **Render** — both have free tiers and give you a fixed URL.
+- The free Twilio trial lets you send to any number once you add credit.
+  Upgrade from trial ($0, just add billing) to remove the "$15 trial" banner
+  from outgoing messages.
