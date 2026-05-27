@@ -1,4 +1,4 @@
-# Wedding RSVP — SMS Bot (Twilio)
+# Wedding RSVP — SMS / WhatsApp Bot (Twilio)
 
 Guests receive an SMS with your invitation and reply **1**, **2**, or **3**.
 They immediately get a confirmation back. Responses are saved to a database
@@ -180,6 +180,33 @@ Then re-run `send_invitations.py` — it only sends to new guests.
 | 200 guests (send + receive) | ~$15-20 total |
 | Twilio free trial credit | $15 |
 | **Out of pocket** | **~$5 after trial** |
+
+---
+
+## Switching to WhatsApp
+
+The same code supports WhatsApp — one line change in `.env`:
+
+```
+MESSAGE_CHANNEL=whatsapp
+```
+
+### For testing (WhatsApp Sandbox)
+
+1. In Twilio console go to **Messaging → Try it out → Send a WhatsApp message**
+2. Each guest must first text **"join [your-keyword]"** to `+14155238886` to opt in
+3. Set `TWILIO_FROM_NUMBER=+14155238886` in `.env`
+4. Set `MESSAGE_CHANNEL=whatsapp`
+
+### For production (all 200 guests, no opt-in)
+
+1. In Twilio console go to **Messaging → Senders → WhatsApp Senders**
+2. Click **"Request Access"** and follow Twilio's guided Meta approval process
+3. Once approved, use your new WhatsApp Sender number as `TWILIO_FROM_NUMBER`
+4. Set `MESSAGE_CHANNEL=whatsapp`
+
+> Twilio's WhatsApp approval is the same Meta process but Twilio walks you
+> through it step by step — easier than doing it directly with Meta.
 
 ---
 

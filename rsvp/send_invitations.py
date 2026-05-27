@@ -7,7 +7,7 @@ import uuid
 from dotenv import load_dotenv
 
 from models import Guest, Session
-from sms import normalize_phone, send_sms
+from sms import normalize_phone, send_message
 
 load_dotenv()
 
@@ -50,7 +50,7 @@ def main():
                 skipped += 1
                 continue
 
-            ok = send_sms(normalized, MESSAGE_TEMPLATE.format(message=INVITATION_MESSAGE))
+            ok = send_message(normalized, MESSAGE_TEMPLATE.format(message=INVITATION_MESSAGE))
             if ok:
                 guest.invited_at = datetime.datetime.utcnow()
                 db.commit()
