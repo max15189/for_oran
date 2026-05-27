@@ -1,2 +1,2 @@
-rsvp/.venv/
-rsvp/rsvp.db
+.venv/
+rsvp.db
