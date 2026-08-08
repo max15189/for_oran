@@ -1,0 +1,52 @@
+# Copy this file to config.yaml and edit it to match your search.
+# config.yaml is gitignored so your personal criteria stay private.
+
+# How often the scheduled runner polls for new listings, in minutes.
+poll_minutes: 15
+
+# When a listing does not state whether it is furnished, should it still
+# count as a match (true) or be filtered out (false)?
+notify_unknown_furnished: true
+
+# --- Yad2 location codes -----------------------------------------------------
+# Yad2 filters by NUMERIC codes, not names. Find yours by browsing
+# https://www.yad2.co.il/realestate/rent with the filters you want, then look
+# at the URL query string, e.g. ?city=5000&neighborhood=1483
+# Leave a value empty/removed to not filter on it.
+yad2:
+  city: 5000            # 5000 = Tel Aviv-Yafo (example)
+  area: null            # optional broader area code
+  neighborhood: null    # optional neighborhood code
+  property_group: null  # optional (apartments, etc.)
+
+# --- Your criteria -----------------------------------------------------------
+# These are applied locally to every listing after scraping, so they work the
+# same across all sources (Yad2 today, Facebook later).
+search:
+  min_price: null       # e.g. 3000 (null = no minimum)
+  max_price: 6000       # e.g. 6000 (null = no maximum)
+  currency: "ILS"
+
+  min_rooms: 2          # null = no minimum
+  max_rooms: 4          # null = no maximum
+
+  min_sqm: 45           # null = no minimum
+  max_sqm: null         # null = no maximum
+
+  # Human-readable filters. Matching is case-insensitive substring; leave the
+  # list empty to accept any city/neighborhood.
+  cities: ["תל אביב יפו"]
+  neighborhoods: []
+
+  # true  = only furnished listings
+  # false = only unfurnished listings
+  # null  = don't care
+  furnished: null
+
+  # Optional free-text keywords that must all appear in the title/description.
+  # e.g. ["מרפסת"] to require a balcony. Empty = no keyword requirement.
+  must_include: []
+
+  # Optional free-text keywords that exclude a listing if any appears.
+  # e.g. ["שותפים"] to skip roommate posts. Empty = no exclusions.
+  must_exclude: []
